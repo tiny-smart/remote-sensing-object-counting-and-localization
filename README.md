@@ -1,34 +1,20 @@
-# Point-Query Quadtree for Crowd Counting, Localization, and More (ICCV 2023)
+# Remote-Sensing-Target-Localization
 
-This repository includes the official implementation of the paper: 
-
-[**Point-Query Quadtree for Crowd Counting, Localization, and More**](https://arxiv.org/abs/2308.13814)
-
-International Conference on Computer Vision (ICCV), 2023
-
-[Chengxin Liu](https://cxliu0.github.io/)<sup>1</sup>, [Hao Lu](https://sites.google.com/site/poppinace/)<sup>1</sup>, [Zhiguo Cao](http://english.aia.hust.edu.cn/info/1085/1528.htm)<sup>1</sup>, [Tongliang Liu](https://tongliang-liu.github.io/)<sup>2</sup>
-
-<sup>1</sup>Huazhong University of Science and Technology, China  
-
-<sup>2</sup>The University of Sydney, Australia
-
-[[Paper]](https://arxiv.org/abs/2308.13814) | [[Supplementary]](https://drive.google.com/file/d/1WxdtOaEEccYrXuNQTn1k29lFDAetBm63/view?usp=sharing)
-
-![PET](teaser.JPG)
 
 ## Highlights
 
-We formulate crowd counting as a decomposable point querying process, where sparse input points could split into four new points when necessary. This formulation exhibits many appealing properties:
 
-- *Intuitive*: The input and output are both interpretable and steerable
-  
-- *Generic*: PET is applicable to a number of crowd-related tasks, by simply adjusting the input format
-  
-- *Effective*: PET reports state-of-the-art crowd counting and localization results
+We express the localization problem as a decomposable point querying process, concurrently addressing the counting issue. In this process, sparse input points can bifurcate into four new points when necessary. Our project is designed for aerial scenes in remote sensing, with the current focus on locating objects such as ships, crowds, and aircraft.
+
   
 
 ## Installation
 
+- Our project has no extra compiled components, minimal package dependencies, making the code straightforward and easy to use. Instructions for installing dependencies via conda are provided. First, clone the repository locally:
+  
+```
+git clone https://github.com/babadaiwo/Remote-Sensing-Target-Localization.git
+```
 - Required packages:
   
 ```
@@ -40,7 +26,7 @@ scipy
 matplotlib
 ```
 
-- Install packages:
+- Then, install packages as:
 
 ```
 pip install -r requirements.txt
@@ -63,6 +49,26 @@ PET
 ├── ...
 ```
 
+- Download crowd-counting datasets, e.g., [ShanghaiTech](https://github.com/desenzhou/ShanghaiTechDataset).
+  
+- We expect the directory structure to be as follows:
+  
+
+```
+PET
+├── data
+│    ├── CARPK
+├── datasets
+├── models
+├── ...
+```
+
+
+- Download CARPK datasets, e.g., [CARPK](https://github.com/desenzhou/ShanghaiTechDataset).
+- I have transformed the CARPK dataset into a universal VOC dataset format. For unannotated images, you can use [LabelImg](https://pan.baidu.com/s/1hB-WxbBhhRDVYOBs7h961w) (ps:c8lc) to standardize the annotations for the images. For annotated images, you can refer to 'Remote-Sensing-Target-Localization/util/convert_bbox_to_points.py' to convert existing data into the VOC dataset format.
+  
+- We expect the directory structure to be as follows:
+
 - Alternatively, you can define the path of the dataset in [datasets/__init__.py](datasets/__init__.py)
 
 
@@ -71,7 +77,13 @@ PET
 - Download ImageNet pretrained [vgg16_bn](https://download.pytorch.org/models/vgg16_bn-6c64b313.pth), and put it in ```pretrained``` folder. Or you can define your pre-trained model path in [models/backbones/vgg.py](models/backbones/vgg.py)
   
 
-- To train PET on ShanghaiTech PartA, run
+- To train our model on ShanghaiTech PartA, run
+  
+  ```
+  sh train.sh
+  ```
+
+  - To train our model on CARPK, run
   
   ```
   sh train.sh
