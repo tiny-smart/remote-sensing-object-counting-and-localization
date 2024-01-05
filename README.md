@@ -87,7 +87,6 @@ PET
   
   ```
   sh train.sh
-
  or
   CUDA_VISIBLE_DEVICES='0' \
 python -m torch.distributed.launch \
