@@ -89,27 +89,15 @@ sh eval.sh
 ```
 
 
-## Citation
-
-If you find this work helpful for your research, please consider citing:
-
-```
-@InProceedings{liu2023pet,
-  title={Point-Query Quadtree for Crowd Counting, Localization, and More},
-  author={Liu, Chengxin and Lu, Hao and Cao, Zhiguo and Liu, Tongliang},
-  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-  year={2023}
-}
-```
 
 
 ## Permission
 
-This code is for academic purposes only. Contact: Chengxin Liu (cx_liu@hust.edu.cn)
+This code is for academic purposes only. Contact: Yujia Liang (yjlianghust.edu.cn)
 
 
 ## Acknowledgement
 
-We thank the authors of [DETR](https://github.com/facebookresearch/detr) and [P2PNet](https://github.com/TencentYoutuResearch/CrowdCounting-P2PNet) for open-sourcing their work.
+We thank the authors of [PET](https://github.com/cxliu0/PET) for open-sourcing their work.
 
 
