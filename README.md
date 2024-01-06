@@ -49,7 +49,7 @@ PET
 ├── ...
 ```
 
-- Download crowd-counting datasets, e.g., [ShanghaiTech](https://github.com/desenzhou/ShanghaiTechDataset).
+- Download CARPK datasets, e.g., [CARPK](https://pan.quark.cn/s/aabe178075a9).
   
 - We expect the directory structure to be as follows:
   
@@ -64,7 +64,7 @@ PET
 ```
 
 
-- Download CARPK datasets, e.g., [CARPK](https://github.com/babadaiwo/CARPK.git).
+
 - I have transformed the CARPK dataset into a universal VOC dataset format. For unannotated images, you can use [LabelImg](https://pan.baidu.com/s/1hB-WxbBhhRDVYOBs7h961w) (ps:c8lc) to standardize the annotations for the images. For annotated images, you can refer to 'Remote-Sensing-Target-Localization/util/convert_bbox_to_points.py' to convert existing data into the VOC dataset format.
   
 - We expect the directory structure to be as follows:
