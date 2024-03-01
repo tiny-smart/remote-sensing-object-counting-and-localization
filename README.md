@@ -1,34 +1,20 @@
-# Point-Query Quadtree for Crowd Counting, Localization, and More (ICCV 2023)
+# Remote-Sensing-Target-Localization
 
-This repository includes the official implementation of the paper: 
-
-[**Point-Query Quadtree for Crowd Counting, Localization, and More**](https://arxiv.org/abs/2308.13814)
-
-International Conference on Computer Vision (ICCV), 2023
-
-[Chengxin Liu](https://cxliu0.github.io/)<sup>1</sup>, [Hao Lu](https://sites.google.com/site/poppinace/)<sup>1</sup>, [Zhiguo Cao](http://english.aia.hust.edu.cn/info/1085/1528.htm)<sup>1</sup>, [Tongliang Liu](https://tongliang-liu.github.io/)<sup>2</sup>
-
-<sup>1</sup>Huazhong University of Science and Technology, China  
-
-<sup>2</sup>The University of Sydney, Australia
-
-[[Paper]](https://arxiv.org/abs/2308.13814) | [[Supplementary]](https://drive.google.com/file/d/1WxdtOaEEccYrXuNQTn1k29lFDAetBm63/view?usp=sharing)
-
-![PET](teaser.JPG)
 
 ## Highlights
 
-We formulate crowd counting as a decomposable point querying process, where sparse input points could split into four new points when necessary. This formulation exhibits many appealing properties:
 
-- *Intuitive*: The input and output are both interpretable and steerable
-  
-- *Generic*: PET is applicable to a number of crowd-related tasks, by simply adjusting the input format
-  
-- *Effective*: PET reports state-of-the-art crowd counting and localization results
+We express the localization problem as a decomposable point querying process, concurrently addressing the counting issue. In this process, sparse input points can bifurcate into four new points when necessary. Our project is designed for aerial scenes in remote sensing, with the current focus on locating objects such as ships, crowds, and aircraft.
+
   
 
 ## Installation
 
+- Our project has no extra compiled components, minimal package dependencies, making the code straightforward and easy to use. Instructions for installing dependencies via conda are provided. First, clone the repository locally:
+  
+```
+git clone https://github.com/babadaiwo/Remote-Sensing-Target-Localization.git
+```
 - Required packages:
   
 ```
@@ -40,7 +26,7 @@ scipy
 matplotlib
 ```
 
-- Install packages:
+- Then, install packages as:
 
 ```
 pip install -r requirements.txt
@@ -63,6 +49,26 @@ PET
 ├── ...
 ```
 
+- Download CARPK datasets, e.g., [CARPK](https://pan.quark.cn/s/aabe178075a9).
+  
+- We expect the directory structure to be as follows:
+  
+
+```
+PET
+├── data
+│    ├── CARPK
+├── datasets
+├── models
+├── ...
+```
+
+
+
+- I have transformed the CARPK dataset into a universal VOC dataset format. For unannotated images, you can use [LabelImg](https://pan.baidu.com/s/1hB-WxbBhhRDVYOBs7h961w) (ps:c8lc) to standardize the annotations for the images. For annotated images, you can refer to 'Remote-Sensing-Target-Localization/util/convert_bbox_to_points.py' to convert existing data into the VOC dataset format.
+  
+- We expect the directory structure to be as follows:
+
 - Alternatively, you can define the path of the dataset in [datasets/__init__.py](datasets/__init__.py)
 
 
@@ -71,10 +77,33 @@ PET
 - Download ImageNet pretrained [vgg16_bn](https://download.pytorch.org/models/vgg16_bn-6c64b313.pth), and put it in ```pretrained``` folder. Or you can define your pre-trained model path in [models/backbones/vgg.py](models/backbones/vgg.py)
   
 
-- To train PET on ShanghaiTech PartA, run
+- To train our model on ShanghaiTech PartA, run
   
   ```
   sh train.sh
+  ```
+
+  - To train our model on CARPK, run
+  
+  ```
+  sh train.sh (To modify the dataset in the train.sh)
+  or
+   CUDA_VISIBLE_DEVICES='0' python -m torch.distributed.launch --nproc_per_node=1 --master_port=10001 
+    --use_env main.py 
+    --lr=0.0001 
+    --backbone="vgg16_bn" 
+    --ce_loss_coef=1.0 
+    --point_loss_coef=5.0 
+    --eos_coef=0.5 
+    --dec_layers=2 
+    --hidden_dim=256 
+    --dim_feedforward=512 
+    --nheads=8 
+    --dropout=0.0 
+    --epochs=1500 
+    --dataset_file="CARPK" 
+    --eval_freq=5 
+    --output_dir='pet_model'
   ```
   
 
@@ -89,27 +118,15 @@ sh eval.sh
 ```
 
 
-## Citation
-
-If you find this work helpful for your research, please consider citing:
-
-```
-@InProceedings{liu2023pet,
-  title={Point-Query Quadtree for Crowd Counting, Localization, and More},
-  author={Liu, Chengxin and Lu, Hao and Cao, Zhiguo and Liu, Tongliang},
-  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-  year={2023}
-}
-```
 
 
 ## Permission
 
-This code is for academic purposes only. Contact: Chengxin Liu (cx_liu@hust.edu.cn)
+This code is for academic purposes only. Contact: Yujia Liang (yjlianghust.edu.cn)
 
 
 ## Acknowledgement
 
-We thank the authors of [DETR](https://github.com/facebookresearch/detr) and [P2PNet](https://github.com/TencentYoutuResearch/CrowdCounting-P2PNet) for open-sourcing their work.
+We thank the authors of [PET](https://github.com/cxliu0/PET) for open-sourcing their work.
 
 
