@@ -20,6 +20,9 @@ def get_args_parser():
 
     # model parameters
     # - backbone
+
+    parser.add_argument('--pretrained', default='pretrained/swinv2_base_22k_500k.pth', type=str,
+                        help="Name of the convolutional backbone to use")
     parser.add_argument('--backbone', default='vgg16_bn', type=str,
                         help="Name of the convolutional backbone to use")
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned', 'fourier'),
@@ -38,6 +41,7 @@ def get_args_parser():
     
     # loss parameters
     # - matcher
+
     parser.add_argument('--set_cost_class', default=1, type=float,
                         help="Class coefficient in the matching cost")
     parser.add_argument('--set_cost_point', default=0.05, type=float,
@@ -66,6 +70,75 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     return parser
 
+def del_(cheakpoint):
+    del cheakpoint['backbone.0.backbone.layers.0.blocks.1.attn_mask']
+    del cheakpoint['backbone.0.backbone.layers.1.blocks.1.attn_mask']
+    del cheakpoint['backbone.0.backbone.layers.3.blocks.0.attn.relative_coords_table']
+    del cheakpoint['backbone.0.backbone.layers.3.blocks.0.attn.relative_position_index']
+    del cheakpoint['backbone.0.backbone.layers.3.blocks.1.attn.relative_coords_table']
+    del cheakpoint['backbone.0.backbone.layers.3.blocks.1.attn.relative_position_index']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.0.blocks.1.attn_mask']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.1.blocks.1.attn_mask']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.3.blocks.0.attn.relative_coords_table']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.3.blocks.0.attn.relative_position_index']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.3.blocks.1.attn.relative_coords_table']
+    # del cheakpoint['quadtree_sparse.backbone.0.backbone.layers.3.blocks.1.attn.relative_position_index']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.0.blocks.1.attn_mask']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.1.blocks.1.attn_mask']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.3.blocks.0.attn.relative_coords_table']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.3.blocks.0.attn.relative_position_index']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.3.blocks.1.attn.relative_coords_table']
+    # del cheakpoint['quadtree_dense.backbone.0.backbone.layers.3.blocks.1.attn.relative_position_index']
+    return cheakpoint
+def test_main(args,resume):
+
+    device = torch.device(args.device)
+
+    # fix the seed for reproducibility
+    seed = args.seed + utils.get_rank()
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+    # build model
+    model, criterion = build_model(args,test=True)
+    model.to(device)
+
+    model_without_ddp = model
+    if args.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model_without_ddp = model.module
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('params:', n_parameters / 1e6)
+
+    # build dataset
+    val_image_set = 'val'
+    dataset_val = build_dataset(image_set=val_image_set, args=args)
+
+    if args.distributed:
+        sampler_val = DistributedSampler(dataset_val, shuffle=False)
+    else:
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+
+    data_loader_val = DataLoader(dataset_val, 1, sampler=sampler_val,
+                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
+
+    # load pretrained model
+    if resume:
+        checkpoint = torch.load(resume, map_location='cpu')
+        if args.backbone == "swin_v2":
+            checkpoint['model'] = del_(checkpoint['model'])
+        model_without_ddp.load_state_dict(checkpoint['model'],False)
+        #model.load_state_dict({k.replace('module.', ''): v for k, v in checkpoint['model'].items()})
+        if 'epoch' in checkpoint:
+            cur_epoch = checkpoint['epoch']
+
+    # evaluation
+
+    test_stats = evaluate(model, data_loader_val, device,criterion=criterion)
+    mae, mse = test_stats['mae'], test_stats['mse']
+    return mae,mse
+
 
 def main(args):
     utils.init_distributed_mode(args)
@@ -79,13 +152,16 @@ def main(args):
     random.seed(seed)
 
     # build model
-    model, criterion = build_model(args)
+    model, criterion = build_model(args,test=True)
     model.to(device)
 
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
+    # for p in model.parameters():
+    #     if p.requires_grad==False:
+    #       print('lyj')
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('params:', n_parameters/1e6)
 
@@ -108,15 +184,17 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'])        
+            if args.backbone=="swin_v2":
+               checkpoint['model'] = del_(checkpoint['model'])
+        model_without_ddp.load_state_dict(checkpoint['model'],False)
         if 'epoch' in checkpoint:
             cur_epoch = checkpoint['epoch']
     
     # evaluation
     vis_dir = None if args.vis_dir == "" else args.vis_dir
-    test_stats = evaluate(model,criterion, data_loader_val, device, vis_dir=vis_dir)
-    mae, mse = test_stats['mae'], test_stats['mse']
-    line = f'\nepoch: {cur_epoch}, mae: {mae}, mse: {mse}' 
+    test_stats = evaluate(model, data_loader_val, device,criterion=criterion, vis_dir=vis_dir)
+    mae, mse ,P,R,F,abs= test_stats['mae'], test_stats['mse'], test_stats['Precision_s'], test_stats['Recall_s'] , test_stats['F1_s'],test_stats['abs']
+    line = f'\nepoch: {cur_epoch}, mae: {mae}, MSE: {mse}, Precision: {P},Recall: {R}, F1: {F},abs: {abs}'
     print(line)
 
 
@@ -124,3 +202,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('PET evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
     main(args)
+
+
+def test(args,resume):
+    mae, mse=test_main(args,resume)
+    return mae,mse

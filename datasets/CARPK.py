@@ -21,6 +21,7 @@ class SHA(Dataset):
         self.root_path = data_root
 
         prefix = "train_data" if train else "test_data"
+        #prefix = "train_data"
         self.prefix = prefix
         self.img_list = os.listdir(f"{data_root}/{prefix}/images")
 
@@ -60,9 +61,9 @@ class SHA(Dataset):
         # load image and gt points
         img_path = self.img_list[index]
         gt_path = self.gt_list[img_path]
-        img, points = load_data((img_path, gt_path), self.train)
+        img, points,bboxs = load_data((img_path, gt_path), self.train)
         points = points.astype(float)
-
+        bboxs = bboxs.astype(float)
         # image transform
         if self.transform is not None:
             img = self.transform(img)
@@ -81,7 +82,7 @@ class SHA(Dataset):
 
 
         if self.train:
-            scale_range = [0.3,0.7]
+            scale_range =[0.3,0.7]
             min_size = min(img.shape[1:])
             scale = random.uniform(*scale_range)
 
@@ -89,6 +90,7 @@ class SHA(Dataset):
             if scale * min_size > self.patch_size:
                  img = torch.nn.functional.upsample_bilinear(img.unsqueeze(0), scale_factor=scale).squeeze(0)
                  points *= scale
+                 bboxs*=scale
         img_ = img.numpy()  # FloatTensor转为ndarray
         img_ = np.transpose(img_, (1, 2, 0))  # 把channel那一维放到最后
         # plt.imshow(img_)
@@ -97,14 +99,16 @@ class SHA(Dataset):
         # plt.show()
         # random crop patch
         if self.train:
-            img, points = random_crop(img, points, patch_size=self.patch_size)
-        img_ = img.numpy()  # FloatTensor转为ndarray
-        img_ = np.transpose(img_, (1, 2, 0))  # 把channel那一维放到最后
+            img, points,bboxs = random_crop(img, points,bboxs, patch_size=self.patch_size)
+        else:
+            img, points,bboxs =resize(img, points,bboxs)
+        # img_ = img.numpy()  # FloatTensor转为ndarray
+        # img_ = np.transpose(img_, (1, 2, 0))  # 把channel那一维放到最后
         # plt.imshow(img_)
-        # plt.axis('on')  # 关掉坐标轴为 off
+        # plt.axis('on')  # 关掉坐标轴为 offS
         # plt.title('image')  # 图像题目
         # plt.show()
-        # random flip
+        #random flip
         if random.random() > 0.5 and self.train and self.flip:
             img = torch.flip(img, dims=[2])
             points[:, 1] = self.patch_size - points[:, 1]
@@ -112,6 +116,7 @@ class SHA(Dataset):
         # target
         target = {}
         target['points'] = torch.Tensor(points)
+        target['bboxs'] = torch.Tensor(bboxs)
         target['labels'] = torch.ones([points.shape[0]]).long()
 
         if self.train:
@@ -132,15 +137,23 @@ def load_data(img_gt_path, train):
     root = tree.getroot()
     elements = root.findall('object')
     points=[]
+    bboxs=[]
     for element in elements:
       x=int(element.findall('point_2d')[0].find('center_x').text)
       y =int(element.findall('point_2d')[0].find('center_y').text)
-      points.append([x,y])
+
+      xmin=int(element.findall('bndbox')[0].find('xmin').text)
+      ymin =int(element.findall('bndbox')[0].find('ymin').text)
+      xmax=int(element.findall('bndbox')[0].find('xmax').text)
+      ymax =int(element.findall('bndbox')[0].find('ymax').text)
+      points.append([y,x])
+      bboxs.append([xmin, ymin,xmax, ymax])
     points = np.array(points)
-    return img, points
+    bboxs = np.array(bboxs)
+    return img, points,bboxs
 
 
-def random_crop(img, points, patch_size=256):
+def random_crop(img, points,bboxs, patch_size=256):
     patch_h = patch_size
     patch_w = patch_size
 
@@ -154,8 +167,13 @@ def random_crop(img, points, patch_size=256):
     # clip image and points
     result_img = img[:, start_h:end_h, start_w:end_w]
     result_points = points[idx]
+    result_bboxs=bboxs[idx]
     result_points[:, 0] -= start_h
     result_points[:, 1] -= start_w
+    result_bboxs[:, 0] -= start_w
+    result_bboxs[:, 1] -= start_h
+    result_bboxs[:, 2] -= start_w
+    result_bboxs[:, 3] -= start_h
 
     # resize to patchsize
     imgH, imgW = result_img.shape[-2:]
@@ -163,7 +181,33 @@ def random_crop(img, points, patch_size=256):
     result_img = torch.nn.functional.interpolate(result_img.unsqueeze(0), (patch_h, patch_w)).squeeze(0)
     result_points[:, 0] *= fH
     result_points[:, 1] *= fW
-    return result_img, result_points
+    result_bboxs[:, 0] *= fW
+    result_bboxs[:, 1] *= fH
+    result_bboxs[:, 2] *= fW
+    result_bboxs[:, 3] *= fH
+    return result_img, result_points,result_bboxs
+
+
+
+
+def resize(img, points,bboxs):
+    patch_h = 512
+    patch_w = 1024
+
+
+    # resize to patchsize
+    imgH, imgW = img.shape[-2:]
+    fH, fW = patch_h / imgH, patch_w / imgW
+    result_img = torch.nn.functional.interpolate(img.unsqueeze(0), (patch_h, patch_w)).squeeze(0)
+    result_bboxs = bboxs.copy()
+    result_points = points.copy()
+    result_points[:, 0] *= fH
+    result_points[:, 1] *= fW
+    result_bboxs[:, 0] *= fW
+    result_bboxs[:, 1] *= fH
+    result_bboxs[:, 2] *= fW
+    result_bboxs[:, 3] *= fH
+    return result_img, result_points,result_bboxs
 
 
 def build(image_set, args):

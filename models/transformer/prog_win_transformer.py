@@ -55,7 +55,7 @@ class WinEncoderTransformer(nn.Module):
         return memory_
 
 
-class WinDecoderTransformer(nn.Module):
+class EnWinDecoderTransformer(nn.Module):
     """
     Transformer Decoder, featured with progressive rectangle window attention
     """
@@ -70,6 +70,9 @@ class WinDecoderTransformer(nn.Module):
                                                 dropout, activation)
 
         decoder_norm = nn.LayerNorm(d_model)
+        encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward,
+                                                    dropout, activation)
+        self.encoder = TransformerEncoder(encoder_layer,2 )
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                             return_intermediate=return_intermediate_dec)
         self._reset_parameters()
@@ -96,8 +99,12 @@ class WinDecoderTransformer(nn.Module):
         query_embed_win = window_partition(query_embed_, window_size_h=dec_win_h, window_size_w=dec_win_w)
         tgt = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
 
-        # decoder attention
-        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
+        # decoder attentionforward(self, src,
+        #                 mask: Optional[Tensor] = None,
+        #                 src_key_padding_mask: Optional[Tensor] = None,
+        #                 pos: Optional[Tensor] = None):
+        tgt=self.encoder(tgt,pos=query_embed_win)
+        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win,
                                                                         query_pos=query_embed_win, **kwargs)
         hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
@@ -109,7 +116,8 @@ class WinDecoderTransformer(nn.Module):
         """       
         # decoder attention
         tgt = query_feats
-        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
+        tgt = self.encoder(tgt, pos=query_embed)
+        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win,
                                                                         query_pos=query_embed, **kwargs)
         num_layer, num_elm, num_win, dim = hs_win.shape
         hs = hs_win.reshape(num_layer, num_elm * num_win, dim)
@@ -125,20 +133,114 @@ class WinDecoderTransformer(nn.Module):
         memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
                                                     int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
         
-        # dynamic decoder forward
+        #dynamic decoder forward
         if 'test' in kwargs:
             memory_win = memory_win[:,v_idx]
             pos_embed_win = pos_embed_win[:,v_idx]
             mask_win = mask_win[v_idx]
-            hs = self.decoder_forward_dynamic(query_feats, query_embed, 
+            hs = self.decoder_forward_dynamic(query_feats, query_embed,
                                     memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
             return hs
         else:
             # decoder forward
-            hs = self.decoder_forward(query_feats, query_embed, 
+          hs = self.decoder_forward(query_feats, query_embed,
                                     memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
+          return hs.transpose(1, 2)
+
+
+class WinDecoderTransformer(nn.Module):
+    """
+    Transformer Decoder, featured with progressive rectangle window attention
+    """
+
+    def __init__(self, d_model=256, nhead=8, num_decoder_layers=2,
+                 dim_feedforward=512, dropout=0.0,
+                 activation="relu",
+                 return_intermediate_dec=False,
+                 dec_win_w=16, dec_win_h=8,
+                 ):
+        super().__init__()
+        decoder_layer = DecoderLayer(d_model, nhead, dim_feedforward,
+                                     dropout, activation)
+
+        decoder_norm = nn.LayerNorm(d_model)
+        encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward,
+                                     dropout, activation)
+
+        self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
+                                          return_intermediate=return_intermediate_dec)
+        self._reset_parameters()
+
+        self.dec_win_w, self.dec_win_h = dec_win_w, dec_win_h
+        self.d_model = d_model
+        self.nhead = nhead
+        self.num_layer = num_decoder_layers
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def decoder_forward(self, query_feats, query_embed, memory_win, pos_embed_win, mask_win, dec_win_h, dec_win_w,
+                        src_shape, **kwargs):
+        """
+        decoder forward during training
+        """
+        bs, c, h, w = src_shape
+        qH, qW = query_feats.shape[-2:]
+
+        # window-rize query input
+        query_embed_ = query_embed.permute(1, 2, 0).reshape(bs, c, qH, qW)
+        query_embed_win = window_partition(query_embed_, window_size_h=dec_win_h, window_size_w=dec_win_w)
+        tgt = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
+
+        # decoder attention
+        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win,
+                              query_pos=query_embed_win, **kwargs)
+        hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
+        hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
+        return hs
+
+    def decoder_forward_dynamic(self, query_feats, query_embed, memory_win, pos_embed_win, mask_win, dec_win_h,
+                                dec_win_w, src_shape, **kwargs):
+        """
+        decoder forward during inference
+        """
+        # decoder attention
+        tgt = query_feats
+        hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win,
+                              query_pos=query_embed, **kwargs)
+        num_layer, num_elm, num_win, dim = hs_win.shape
+        hs = hs_win.reshape(num_layer, num_elm * num_win, dim)
+        return hs
+
+    def forward(self, src, pos_embed, mask, pqs, **kwargs):
+        bs, c, h, w = src.shape
+        query_embed, points_queries, query_feats, v_idx = pqs
+        self.dec_win_w, self.dec_win_h = kwargs['dec_win_size']
+
+        # window-rize memory input
+        div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
+        memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask,
+                                                                int(self.dec_win_h / div_ratio),
+                                                                int(self.dec_win_w / div_ratio))
+
+        # dynamic decoder forward
+        if 'test' in kwargs:
+            memory_win = memory_win[:, v_idx]
+            pos_embed_win = pos_embed_win[:, v_idx]
+            mask_win = mask_win[v_idx]
+            hs = self.decoder_forward_dynamic(query_feats, query_embed,
+                                              memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w,
+                                              src.shape, **kwargs)
+            return hs
+        else:
+            # decoder forward
+            hs = self.decoder_forward(query_feats, query_embed,
+                                      memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape,
+                                      **kwargs)
             return hs.transpose(1, 2)
-        
+
 
 class TransformerEncoder(nn.Module):
     """
@@ -231,6 +333,52 @@ class TransformerDecoder(nn.Module):
 
         return output.unsqueeze(0)
 
+
+class TransformerDecoder(nn.Module):
+    """
+    Base Transformer Decoder
+    """
+
+    def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False):
+        super().__init__()
+        self.layers = _get_clones(decoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+        self.return_intermediate = return_intermediate
+
+    def forward(self, tgt, memory,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None,
+                query_pos: Optional[Tensor] = None,
+                **kwargs):
+        output = tgt
+        intermediate = []
+        for idx, layer in enumerate(self.layers):
+            output = layer(output, memory, tgt_mask=tgt_mask,
+                           memory_mask=memory_mask,
+                           tgt_key_padding_mask=tgt_key_padding_mask,
+                           memory_key_padding_mask=memory_key_padding_mask,
+                           pos=pos, query_pos=query_pos)
+
+            if self.return_intermediate:
+                if self.norm is not None:
+                    intermediate.append(self.norm(output))
+                else:
+                    intermediate.append(output)
+
+        if self.norm is not None:
+            output = self.norm(output)
+            if self.return_intermediate:
+                intermediate.pop()
+                intermediate.append(output)
+
+        if self.return_intermediate:
+            return torch.stack(intermediate)
+
+        return output.unsqueeze(0)
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
@@ -328,9 +476,29 @@ def build_encoder(args, **kwargs):
         **kwargs,
     )
 
+def build_encoder_solu( **kwargs):
+    return WinEncoderTransformer(
+        d_model=256,
+        dropout=0.1,
+        nhead=8,
+        dim_feedforward=512,
+        num_encoder_layers=2,
+        **kwargs,
+    )
+
 
 def build_decoder(args, **kwargs):
     return WinDecoderTransformer(
+        d_model=args.hidden_dim,
+        dropout=args.dropout,
+        nhead=args.nheads,
+        dim_feedforward=args.dim_feedforward,
+        num_decoder_layers=args.dec_layers,
+        return_intermediate_dec=True,
+    )
+
+def build_endecoder(args, **kwargs):
+    return EnWinDecoderTransformer(
         d_model=args.hidden_dim,
         dropout=args.dropout,
         nhead=args.nheads,

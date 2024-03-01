@@ -8,14 +8,16 @@ def convert_bbox_to_points(bbox_file_path):
         lines = file.readlines()
 
     points = []
+    bbox=[]
     for line in lines:
         # 解析x1 y1 x2 y2信息并计算框的中心点坐标
         x1, y1, x2, y2,l1 = map(int, line.strip().split())
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
         points.append((center_y, center_x))
+        bbox.append((x1,y1,x2,y2))
 
-    return points
+    return points,bbox
 
 def main():
     # 原始文件夹路径和目标文件夹路径
@@ -33,9 +35,10 @@ def main():
             bbox_file_path = os.path.join(source_folder, filename)
             image_info={'2d_point':None,'bbox':None,'size':None}
             # 将框标注文件转换为点标注列表
-            points = convert_bbox_to_points(bbox_file_path)
+            points,bbox = convert_bbox_to_points(bbox_file_path)
             #ndarray1 = np.array(points)
             image_info['2d_point']=points
+            image_info['bbox'] = bbox
             # 构建新的点标注文件名
             point_file_name = filename[:-4]+'.xml'
 

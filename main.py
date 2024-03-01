@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import os
 import shutil
-
+from eval import test
 import numpy as np
 import torch
 import torch.nn as nn
@@ -48,7 +48,7 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
-
+    parser.add_argument('--img_size', default=(256,256))
     # loss parameters
     # - matcher
     parser.add_argument('--set_cost_class', default=1, type=float,
@@ -62,8 +62,10 @@ def get_args_parser():
                         help="Relative classification weight of the no-object class")
 
     # dataset parameters
+
     parser.add_argument('--dataset_file', default="SHA")
     parser.add_argument('--data_path', default="./data/ShanghaiTech/PartA", type=str)
+    parser.add_argument('--pretrained', default="", type=str)
 
     # misc parameters
     parser.add_argument('--output_dir', default='',
@@ -209,13 +211,14 @@ def main(args):
                 f.write(json.dumps(log_stats) + "\n")
 
         # evaluation
-        if epoch % args.eval_freq == 0 and epoch > 0:
+        if epoch % args.eval_freq == 0:
             t1 = time.time()
-            test_stats = evaluate(model, data_loader_val, device, epoch, None)
+            #test_stats = evaluate(model, data_loader_val, device, epoch, None)
+            mae, mse = test(args,output_dir / 'checkpoint.pth')
             t2 = time.time()
 
             # output results
-            mae, mse = test_stats['mae'], test_stats['mse']
+
             if mae < best_mae:
                 best_epoch = epoch
                 best_mae = mae

@@ -10,6 +10,7 @@ from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
 
 from .matcher import build_matcher
 from .backbones import *
+
 from .transformer import *
 from .position_encoding import build_position_encoding
 
@@ -20,16 +21,19 @@ class BasePETCount(nn.Module):
     """
     def __init__(self, backbone, num_classes, quadtree_layer='sparse', args=None, **kwargs):
         super().__init__()
-        self.backbone = backbone
+        #self.backbone = backbone
         self.transformer = kwargs['transformer']
         hidden_dim = args.hidden_dim
-
+        self.point_pre_encoder=None
+        #if quadtree_layer!='sparse':
+        #enc_win_list = [(4, 4), (4, 4)]
+            #self.point_pre_encoder = build_encoder_solu(enc_win_list=enc_win_list)
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.coord_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
         self.pq_stride = args.sparse_stride if quadtree_layer == 'sparse' else args.dense_stride
         self.feat_name = '8x' if quadtree_layer == 'sparse' else '4x'
-    
+
     def points_queris_embed(self, samples, stride=8, src=None, **kwargs):
         """
         Generate point query embedding during training
@@ -61,7 +65,7 @@ class BasePETCount(nn.Module):
         query_feats = query_feats.view(bs, c, h, w)
 
         return query_embed, points_queries, query_feats
-    
+
     def points_queris_embed_inference(self, samples, stride=8, src=None, **kwargs):
         """
         Generate point query embedding during inference
@@ -82,14 +86,14 @@ class BasePETCount(nn.Module):
         points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) # 2xN --> Nx2
         h, w = shift_x.shape
 
-        # get points queries embedding 
+        # get points queries embedding
         query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
         bs, c = query_embed.shape[:2]
 
         # get points queries features, equivalent to nearest interpolation
         shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
         query_feats = src[:, :, shift_y_down, shift_x_down]
-        
+
         # window-rize
         query_embed = query_embed.reshape(bs, c, h, w)
         points_queries = points_queries.reshape(h, w, 2).permute(2, 0, 1).unsqueeze(0)
@@ -99,18 +103,18 @@ class BasePETCount(nn.Module):
         query_embed_win = window_partition(query_embed, window_size_h=dec_win_h, window_size_w=dec_win_w)
         points_queries_win = window_partition(points_queries, window_size_h=dec_win_h, window_size_w=dec_win_w)
         query_feats_win = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        
+
         # dynamic point query generation
         div = kwargs['div']
         div_win = window_partition(div.unsqueeze(1), window_size_h=dec_win_h, window_size_w=dec_win_w)
-        valid_div = (div_win > 0.5).sum(dim=0)[:,0] 
+        valid_div = (div_win > 0.5).sum(dim=0)[:,0]
         v_idx = valid_div > 0
         query_embed_win = query_embed_win[:, v_idx]
         query_feats_win = query_feats_win[:, v_idx]
         points_queries_win = points_queries_win[:, v_idx].reshape(-1, 2)
-    
+
         return query_embed_win, points_queries_win, query_feats_win, v_idx
-    
+
     def get_point_query(self, samples, features, **kwargs):
         """
         Generate point query
@@ -123,11 +127,13 @@ class BasePETCount(nn.Module):
             query_embed = query_embed.flatten(2).permute(2,0,1) # NxCxHxW --> (HW)xNxC
             v_idx = None
         else:
+            # query_embed, points_queries, query_feats = self.points_queris_embed(samples, self.pq_stride, src, **kwargs)
+            # query_embed = query_embed.flatten(2).permute(2,0,1) # NxCxHxW --> (HW)xNxC
+            # v_idx = None
             query_embed, points_queries, query_feats, v_idx = self.points_queris_embed_inference(samples, self.pq_stride, src, **kwargs)
-
         out = (query_embed, points_queries, query_feats, v_idx)
         return out
-    
+
     def predict(self, samples, points_queries, hs, **kwargs):
         """
         Crowd prediction
@@ -150,23 +156,41 @@ class BasePETCount(nn.Module):
 
         outputs_points = outputs_offsets[-1] + points_queries
         out = {'pred_logits': outputs_class[-1], 'pred_points': outputs_points, 'img_shape': img_shape, 'pred_offsets': outputs_offsets[-1]}
-    
+
         out['points_queries'] = points_queries
         out['pq_stride'] = self.pq_stride
         return out
 
-    def forward(self, samples, features, context_info, **kwargs):
+    def forward(self, samples, features, context_info,pos, masks, **kwargs):
         encode_src, src_pos_embed, mask = context_info
 
         # get points queries for transformer
+
         pqs = self.get_point_query(samples, features, **kwargs)
-        
+
         # point querying
         kwargs['pq_stride'] = self.pq_stride
         hs = self.transformer(encode_src, src_pos_embed, mask, pqs, img_shape=samples.tensors.shape[-2:], **kwargs)
 
-        # prediction
+
+        # flag=True
+        # if len(hs.shape) == 3:
+        #     flag=False
+        #     hs=hs.unsqueeze(1)
+        #
+        # if self.feat_name=='4x' and self.point_pre_encoder!=None:
+        #    down_id=4
+        #    mask=masks.repeat(1,2,2)
+        #    img_shape = samples.tensors.shape[-2:]
+        #    img_h, img_w = img_shape
+        #    hs_ = hs.reshape(hs.shape[0], hs.shape[1], img_h // down_id, img_w // down_id, -1)
+        #    pos=pos[self.feat_name]
+        #    hs[-1]=self.point_pre_encoder(hs_[-1].permute(0,3,1,2),pos, mask).flatten(2).permute(0,2,1)
+        #    if flag==False:
+        #      hs = hs.squeeze(1)
         points_queries = pqs[1]
+
+
         outputs = self.predict(samples, points_queries, hs, **kwargs)
         return outputs
     
@@ -208,8 +232,9 @@ class PET(nn.Module):
         # point-query quadtree
         args.sparse_stride, args.dense_stride = 8, 4    # point-query stride
         transformer = build_decoder(args)
+        transformer_dense = build_endecoder(args)
         self.quadtree_sparse = BasePETCount(backbone, num_classes, quadtree_layer='sparse', args=args, transformer=transformer)
-        self.quadtree_dense = BasePETCount(backbone, num_classes, quadtree_layer='dense', args=args, transformer=transformer)
+        self.quadtree_dense = BasePETCount(backbone, num_classes, quadtree_layer='dense', args=args, transformer= transformer)
 
     def compute_loss(self, outputs, criterion, targets, epoch, samples):
         """
@@ -287,6 +312,7 @@ class PET(nn.Module):
         # backbone
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
+
         features, pos = self.backbone(samples)
 
         # positional embedding
@@ -301,7 +327,7 @@ class PET(nn.Module):
         if 'train' in kwargs:
             out = self.train_forward(samples, features, pos, **kwargs)
         else:
-            out = self.test_forward(samples, features, pos, **kwargs)   
+            out = self.test_forward(samples, features, pos, **kwargs)
         return out
 
     def pet_forward(self, samples, features, pos, **kwargs):
@@ -324,15 +350,15 @@ class PET(nn.Module):
         if 'train' in kwargs or (split_map_sparse > 0.5).sum() > 0:
             kwargs['div'] = split_map_sparse.reshape(bs, sp_h, sp_w)
             kwargs['dec_win_size'] = [16, 8]
-            outputs_sparse = self.quadtree_sparse(samples, features, context_info, **kwargs)
+            outputs_sparse = self.quadtree_sparse(samples, features, context_info,pos, mask, **kwargs)
         else:
             outputs_sparse = None
-        
+
         # quadtree layer1 forward (dense)
         if 'train' in kwargs or (split_map_dense > 0.5).sum() > 0:
             kwargs['div'] = split_map_dense.reshape(bs, ds_h, ds_w)
             kwargs['dec_win_size'] = [8, 4]
-            outputs_dense = self.quadtree_dense(samples, features, context_info, **kwargs)
+            outputs_dense = self.quadtree_dense(samples, features, context_info,pos, mask, **kwargs)
         else:
             outputs_dense = None
         
@@ -355,6 +381,8 @@ class PET(nn.Module):
     
     def test_forward(self, samples, features, pos, **kwargs):
         outputs = self.pet_forward(samples, features, pos, **kwargs)
+        criterion, targets = kwargs['criterion'], kwargs['targets']
+
         out_dense, out_sparse = outputs['dense'], outputs['sparse']
         thrs = 0.5  # inference threshold        
         
@@ -388,6 +416,7 @@ class PET(nn.Module):
             else:
                 div_out[name] = out_sparse[name] if out_sparse is not None else out_dense[name]
         div_out['split_map_raw'] = outputs['split_map_raw']
+        div_out['ind']=criterion.forward_ind(div_out, targets)
         return div_out
 
 
@@ -396,6 +425,7 @@ class SetCriterion(nn.Module):
         1) compute hungarian assignment between ground truth points and the outputs of the model
         2) supervise each pair of matched ground-truth / prediction and split map
     """
+
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses):
         """
         Parameters:
@@ -412,10 +442,10 @@ class SetCriterion(nn.Module):
         self.eos_coef = eos_coef
         self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
-        empty_weight[0] = self.eos_coef    # coefficient for non-object background points
+        empty_weight[0] = self.eos_coef  # coefficient for non-object background points
         self.register_buffer('empty_weight', empty_weight)
-        self.div_thrs_dict = {8: 0.0, 4:0.5}
-    
+        self.div_thrs_dict = {8: 0.0, 4: 0.5}
+
     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
         """
         Classification loss:
@@ -433,14 +463,14 @@ class SetCriterion(nn.Module):
             # get sparse / dense image index
             den = torch.tensor([target['density'] for target in targets])
             den_sort = torch.sort(den)[1]
-            ds_idx = den_sort[:len(den_sort)//2]
-            sp_idx = den_sort[len(den_sort)//2:]
+            ds_idx = den_sort[:len(den_sort) // 2]
+            sp_idx = den_sort[len(den_sort) // 2:]
             eps = 1e-5
 
             # raw cross-entropy loss
             weights = target_classes.clone().float()
-            weights[weights==0] = self.empty_weight[0]
-            weights[weights==1] = self.empty_weight[1]
+            weights[weights == 0] = self.empty_weight[0]
+            weights[weights == 1] = self.empty_weight[1]
             raw_ce_loss = F.cross_entropy(src_logits.transpose(1, 2), target_classes, ignore_index=-1, reduction='none')
 
             # binarize split map
@@ -486,8 +516,8 @@ class SetCriterion(nn.Module):
             # get sparse / dense index
             den = torch.tensor([target['density'] for target in targets])
             den_sort = torch.sort(den)[1]
-            img_ds_idx = den_sort[:len(den_sort)//2]
-            img_sp_idx = den_sort[len(den_sort)//2:]
+            img_ds_idx = den_sort[:len(den_sort) // 2]
+            img_sp_idx = den_sort[len(den_sort) // 2:]
             pt_ds_idx = torch.cat([torch.where(idx[0] == bs_id)[0] for bs_id in img_ds_idx])
             pt_sp_idx = torch.cat([torch.where(idx[0] == bs_id)[0] for bs_id in img_sp_idx])
 
@@ -502,13 +532,14 @@ class SetCriterion(nn.Module):
 
             # loss on non-div regions
             non_div_mask = split_map <= div_thrs
-            loss_points_nondiv = (loss_points_raw * non_div_mask[idx].unsqueeze(-1)).sum() / (non_div_mask[idx].sum() + eps)   
+            loss_points_nondiv = (loss_points_raw * non_div_mask[idx].unsqueeze(-1)).sum() / (
+                        non_div_mask[idx].sum() + eps)
 
             # final point loss
             losses['loss_points'] = loss_points_div_sp + loss_points_div_ds + loss_points_nondiv
         else:
             losses['loss_points'] = loss_points_raw.sum() / num_points
-        
+
         return losses
 
     def _get_src_permutation_idx(self, indices):
@@ -554,19 +585,186 @@ class SetCriterion(nn.Module):
             losses.update(self.get_loss(loss, outputs, targets, indices, num_points, **kwargs))
         return losses
 
-
-    def forward_0(self, outputs, targets, **kwargs):
-        """ Loss computation
-        Parameters:
-             outputs: dict of tensors, see the output specification of the model for the format
-             targets: list of dicts, such that len(targets) == batch_size.
-                      The expected keys in each dict depends on the losses applied, see each loss' doc
-        """
-        # retrieve the matching between the outputs of the last layer and the targets
+    def forward_ind(self, outputs, targets):
         indices = self.matcher(outputs, targets)
+        return  indices
 
-
-        return indices
+# class SetCriterion(nn.Module):
+#     """ Compute the loss for PET:
+#         1) compute hungarian assignment between ground truth points and the outputs of the model
+#         2) supervise each pair of matched ground-truth / prediction and split map
+#     """
+#     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses):
+#         """
+#         Parameters:
+#             num_classes: one-class in crowd counting
+#             matcher: module able to compute a matching between targets and point queries
+#             weight_dict: dict containing as key the names of the losses and as values their relative weight.
+#             eos_coef: relative classification weight applied to the no-object category
+#             losses: list of all the losses to be applied. See get_loss for list of available losses.
+#         """
+#         super().__init__()
+#         self.num_classes = num_classes
+#         self.matcher = matcher
+#         self.weight_dict = weight_dict
+#         self.eos_coef = eos_coef
+#         self.losses = losses
+#         empty_weight = torch.ones(self.num_classes + 1)
+#         empty_weight[0] = self.eos_coef    # coefficient for non-object background points
+#         self.register_buffer('empty_weight', empty_weight)
+#         self.div_thrs_dict = {8: 0.0, 4:0.5}
+#
+#     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
+#         """
+#         Classification loss:
+#             - targets dicts must contain the key "labels" containing a tensor of dim [nb_target_points]
+#         """
+#         assert 'pred_logits' in outputs
+#         src_logits = outputs['pred_logits']
+#         idx = self._get_src_permutation_idx(indices)
+#         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+#         target_classes = torch.zeros(src_logits.shape[:2], dtype=torch.int64, device=src_logits.device)
+#         target_classes[idx] = target_classes_o
+#
+#         # compute classification loss
+#         if 'div' in kwargs:
+#             # get sparse / dense image index
+#             den = torch.tensor([target['density'] for target in targets])
+#             den_sort = torch.sort(den)[1]
+#             ds_idx = den_sort[:len(den_sort)//2]
+#             sp_idx = den_sort[len(den_sort)//2:]
+#             eps = 1e-5
+#
+#             # raw cross-entropy loss
+#             weights = target_classes.clone().float()
+#             weights[weights==0] = self.empty_weight[0]
+#             weights[weights==1] = self.empty_weight[1]
+#             raw_ce_loss = F.cross_entropy(src_logits.transpose(1, 2), target_classes, ignore_index=-1, reduction='none')
+#
+#             # binarize split map
+#             split_map = kwargs['div']
+#             div_thrs = self.div_thrs_dict[outputs['pq_stride']]
+#             div_mask = split_map > div_thrs
+#
+#             # dual supervision for sparse/dense images
+#             loss_ce_sp = (raw_ce_loss * weights * div_mask)[sp_idx].sum() / ((weights * div_mask)[sp_idx].sum() + eps)
+#             loss_ce_ds = (raw_ce_loss * weights * div_mask)[ds_idx].sum() / ((weights * div_mask)[ds_idx].sum() + eps)
+#             loss_ce = loss_ce_sp + loss_ce_ds
+#
+#             # loss on non-div regions
+#             non_div_mask = split_map <= div_thrs
+#             loss_ce_nondiv = (raw_ce_loss * weights * non_div_mask).sum() / ((weights * non_div_mask).sum() + eps)
+#             loss_ce = loss_ce + loss_ce_nondiv
+#         else:
+#             loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight, ignore_index=-1)
+#
+#         losses = {'loss_ce': loss_ce}
+#         return losses
+#
+#     def loss_points(self, outputs, targets, indices, num_points, **kwargs):
+#         """
+#         SmoothL1 regression loss:
+#            - targets dicts must contain the key "points" containing a tensor of dim [nb_target_points, 2]
+#         """
+#         assert 'pred_points' in outputs
+#         # get indices
+#         idx = self._get_src_permutation_idx(indices)
+#         src_points = outputs['pred_points'][idx]
+#         target_points = torch.cat([t['points'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+#
+#         # compute regression loss
+#         losses = {}
+#         img_shape = outputs['img_shape']
+#         img_h, img_w = img_shape
+#         target_points[:, 0] /= img_h
+#         target_points[:, 1] /= img_w
+#         loss_points_raw = F.smooth_l1_loss(src_points, target_points, reduction='none')
+#
+#         if 'div' in kwargs:
+#             # get sparse / dense index
+#             den = torch.tensor([target['density'] for target in targets])
+#             den_sort = torch.sort(den)[1]
+#             img_ds_idx = den_sort[:len(den_sort)//2]
+#             img_sp_idx = den_sort[len(den_sort)//2:]
+#             pt_ds_idx = torch.cat([torch.where(idx[0] == bs_id)[0] for bs_id in img_ds_idx])
+#             pt_sp_idx = torch.cat([torch.where(idx[0] == bs_id)[0] for bs_id in img_sp_idx])
+#
+#             # dual supervision for sparse/dense images
+#             eps = 1e-5
+#             split_map = kwargs['div']
+#             div_thrs = self.div_thrs_dict[outputs['pq_stride']]
+#             div_mask = split_map > div_thrs
+#             loss_points_div = loss_points_raw * div_mask[idx].unsqueeze(-1)
+#             loss_points_div_sp = loss_points_div[pt_sp_idx].sum() / (len(pt_sp_idx) + eps)
+#             loss_points_div_ds = loss_points_div[pt_ds_idx].sum() / (len(pt_ds_idx) + eps)
+#
+#             # loss on non-div regions
+#             non_div_mask = split_map <= div_thrs
+#             loss_points_nondiv = (loss_points_raw * non_div_mask[idx].unsqueeze(-1)).sum() / (non_div_mask[idx].sum() + eps)
+#
+#             # final point loss
+#             losses['loss_points'] = loss_points_div_sp + loss_points_div_ds + loss_points_nondiv
+#         else:
+#             losses['loss_points'] = loss_points_raw.sum() / num_points
+#
+#         return losses
+#
+#     def _get_src_permutation_idx(self, indices):
+#         # permute predictions following indices
+#         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
+#         src_idx = torch.cat([src for (src, _) in indices])
+#         return batch_idx, src_idx
+#
+#     def _get_tgt_permutation_idx(self, indices):
+#         # permute targets following indices
+#         batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
+#         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
+#         return batch_idx, tgt_idx
+#
+#     def get_loss(self, loss, outputs, targets, indices, num_points, **kwargs):
+#         loss_map = {
+#             'labels': self.loss_labels,
+#             'points': self.loss_points,
+#         }
+#         assert loss in loss_map, f'{loss} loss is not defined'
+#         return loss_map[loss](outputs, targets, indices, num_points, **kwargs)
+#
+#     def forward(self, outputs, targets, **kwargs):
+#         """ Loss computation
+#         Parameters:
+#              outputs: dict of tensors, see the output specification of the model for the format
+#              targets: list of dicts, such that len(targets) == batch_size.
+#                       The expected keys in each dict depends on the losses applied, see each loss' doc
+#         """
+#         # retrieve the matching between the outputs of the last layer and the targets
+#         indices = self.matcher(outputs, targets)
+#
+#         # compute the average number of target points accross all nodes, for normalization purposes
+#         num_points = sum(len(t["labels"]) for t in targets)
+#         num_points = torch.as_tensor([num_points], dtype=torch.float, device=next(iter(outputs.values())).device)
+#         if is_dist_avail_and_initialized():
+#             torch.distributed.all_reduce(num_points)
+#         num_points = torch.clamp(num_points / get_world_size(), min=1).item()
+#
+#         # compute all the requested losses
+#         losses = {}
+#         for loss in self.losses:
+#             losses.update(self.get_loss(loss, outputs, targets, indices, num_points, **kwargs))
+#         return losses
+#
+#
+#     def forward_0(self, outputs, targets, **kwargs):
+#         """ Loss computation
+#         Parameters:
+#              outputs: dict of tensors, see the output specification of the model for the format
+#              targets: list of dicts, such that len(targets) == batch_size.
+#                       The expected keys in each dict depends on the losses applied, see each loss' doc
+#         """
+#         # retrieve the matching between the outputs of the last layer and the targets
+#         indices = self.matcher(outputs, targets)
+#
+#
+#         return indices
 
 
 class MLP(nn.Module):
@@ -592,12 +790,16 @@ class MLP(nn.Module):
         return x
 
 
-def build_pet(args):
+def build_pet(args,test=False):
     device = torch.device(args.device)
 
     # build model
     num_classes = 1
-    backbone = build_backbone_vgg(args)
+    if args.backbone=='vgg16_bn':
+        backbone = build_backbone_vgg(args)
+
+    elif  args.backbone=='swin_v2':
+        backbone = build_backbone_swin(args, test)
     model = PET(
         backbone,
         num_classes=num_classes,

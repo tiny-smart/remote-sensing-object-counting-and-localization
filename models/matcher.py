@@ -43,6 +43,8 @@ class HungarianMatcher(nn.Module):
                 len(index_i) = len(index_j) = min(num_queries, num_target_points)
         """
         bs, num_queries = outputs["pred_logits"].shape[:2]
+        if num_queries==0:
+            return  torch.Tensor([[[0],[0]]])
 
         # flatten to compute the cost matrices in a batch
         out_prob = outputs["pred_logits"].flatten(0, 1).softmax(-1)  # [batch_size * num_queries, 2]
@@ -60,10 +62,11 @@ class HungarianMatcher(nn.Module):
         out_points_abs = out_points.clone()
         out_points_abs[:,0] *= img_h
         out_points_abs[:,1] *= img_w
-        cost_point = torch.cdist(out_points_abs, tgt_points, p=2)
+        cost_point = torch.cdist(out_points_abs, tgt_points.to(out_points_abs.device), p=2)
 
         # final cost matrix
         C = self.cost_point * cost_point + self.cost_class * cost_class
+
         C = C.view(bs, num_queries, -1).cpu()
 
         sizes = [len(v["points"]) for v in targets]

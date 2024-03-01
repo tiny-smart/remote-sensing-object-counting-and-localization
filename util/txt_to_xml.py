@@ -37,7 +37,7 @@ def buildNewsXmlFile(source_folder):
         data = open(gt_path, "r")
         text = json.load(data)
         points = np.array(text['2d_point'])
-
+        boxx = np.array(text['bbox'])
         for i in  range (len(points)):
                object= ET.SubElement(root, "object")
                name =ET.SubElement(object, "name") #类别名 car,people, plane
@@ -51,16 +51,18 @@ def buildNewsXmlFile(source_folder):
                ymin=ET.SubElement(bndbox, "ymin")
                xmax = ET.SubElement(bndbox, "xmax")
                ymax = ET.SubElement(bndbox, "ymax")
-
-
+               xmin.text=str(boxx[i][0])
+               ymin.text=str(boxx[i][1])
+               xmax.text=str(boxx[i][2])
+               ymax.text=str(boxx[i][3])
                point_2d = ET.SubElement(object, "point_2d")
                #必要的！！！
                center_x=ET.SubElement(point_2d, "center_x")
                center_y=ET.SubElement(point_2d, "center_y")
 
 
-               center_x.text=str(points[i][0])
-               center_y.text=str(points[i][1])
+               center_y.text=str(points[i][0])
+               center_x.text=str(points[i][1])
         #将节点数信息保存在ElementTree中，并且保存为XML格式文件
         tree = ET.ElementTree(root)
         tree.write('/data/yjliang/code/SAC/PET/data/CARPK/test_data/VGG_anotation_truth/'+file)
