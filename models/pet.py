@@ -4,7 +4,6 @@ PET model and criterion classes
 import torch
 import torch.nn.functional as F
 from torch import nn
-
 from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        get_world_size, is_dist_avail_and_initialized)
 
