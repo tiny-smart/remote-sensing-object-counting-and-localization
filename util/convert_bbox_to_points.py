@@ -7,6 +7,7 @@ def convert_bbox_to_points(bbox_file_path):
     with open(bbox_file_path, 'r') as file:
         lines = file.readlines()
 
+
     points = []
     bbox=[]
     for line in lines:
