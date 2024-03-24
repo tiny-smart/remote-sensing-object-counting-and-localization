@@ -125,10 +125,24 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
+def cal_distance(sig_s,idn, target_set,outputs_set):
+    tp=0
+    for i in range(len(idn[0])):
+        img_h1=sig_s[idn[1][i]][1]
+        img_w1 = sig_s[idn[1][i]][0]
+        img_h2=sig_s[idn[1][i]][3]
+        img_w2 = sig_s[idn[1][i]][2]
+        img_h=img_h2-img_h1
+        img_w=img_w2-img_w1
+        dis=math.sqrt(img_h*img_h+ img_w*img_w)/2
+        if (target_set[idn[1][i]][0]-outputs_set[idn[0][i]][0])*(target_set[idn[1][i]][0]-outputs_set[idn[0][i]][0])\
+                +(target_set[idn[1][i]][1]-outputs_set[idn[0][i]][1])*(target_set[idn[1][i]][1]-outputs_set[idn[0][i]][1])<=dis*dis:
+            tp+=1
+    return tp
 
 # evaluation
 @torch.no_grad()
-def evaluate(model, data_loader, device, epoch=0, vis_dir=None):
+def evaluate(model, data_loader, device, epoch=0, criterion=None,vis_dir=None):
     model.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -143,7 +157,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None):
         img_h, img_w = samples.tensors.shape[-2:]
 
         # inference
-        outputs = model(samples, test=True, targets=targets)
+        outputs = model(samples,  criterion= criterion,test=True, targets=targets)
         outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
         outputs_points = outputs['pred_points'][0]
         outputs_offsets = outputs['pred_offsets'][0]
@@ -152,22 +166,39 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None):
         predict_cnt = len(outputs_scores)
         gt_cnt = targets[0]['points'].shape[0]
 
+        target_set=targets[0]['points']
+        outputs_set= outputs['pred_points'][0]
+        outputs_set[:,0]*=img_h
+        outputs_set[:,1] *= img_w
+        target_box = targets[0]['bboxs']
+        ind=outputs['ind'][0]
+        if outputs_set.shape[0]!=0:
+          tp= cal_distance(target_box,ind,target_set,outputs_set)
+        else:
+            tp=0
         # compute error
-        mae = abs(predict_cnt - gt_cnt)
-        mse = (predict_cnt - gt_cnt) * (predict_cnt - gt_cnt)
+        fn=gt_cnt-tp
+        fp=predict_cnt-tp
 
+        mae = abs(predict_cnt - gt_cnt)
+        abs_=abs(predict_cnt - gt_cnt)/gt_cnt
+        mse = (predict_cnt - gt_cnt) * (predict_cnt - gt_cnt)
+        Precision_s=tp/(tp+fp+0.0000000000000001)
+        Recall_s=tp/(tp+fn+0.000000000001)
+        F1_s=2*(Precision_s*Recall_s)/(Precision_s+Recall_s+0.00000001)
         # record results
         results = {}
         toTensor = lambda x: torch.tensor(x).float().cuda()
-        results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
-        metric_logger.update(mae=results['mae'], mse=results['mse'])
+        results['mae'], results['mse'], results['Precision_s'],results['Recall_s'], results['F1_s'] ,results['abs']= toTensor(mae), toTensor(mse),Precision_s,Recall_s,F1_s,abs_
+
+        metric_logger.update(mae=results['mae'], mse=results['mse'],Precision_s=results['Precision_s'],Recall_s=results['Recall_s'],F1_s=results['F1_s'],abs=results['abs'])
 
         results_reduced = utils.reduce_dict(results)
-        metric_logger.update(mae=results_reduced['mae'], mse=results_reduced['mse'])
+        metric_logger.update(mae=results_reduced['mae'], mse=results_reduced['mse'],Precision_s=results['Precision_s'],Recall_s=results['Recall_s'],F1_s=results['F1_s'],abs=results['abs'])
 
         # visualize predictions
         if vis_dir: 
-            points = [[point[0]*img_h, point[1]*img_w] for point in outputs_points]     # recover to actual points
+            points = [[point[0], point[1]] for point in outputs_points]     # recover to actual points
             split_map = (outputs['split_map_raw'][0].detach().cpu().squeeze(0) > 0.5).float().numpy()
             visualization(samples, targets, [points], vis_dir, split_map=split_map)
     
