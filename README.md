@@ -13,7 +13,7 @@ We express the localization problem as a decomposable point querying process, co
 - Our project has no extra compiled components, minimal package dependencies, making the code straightforward and easy to use. Instructions for installing dependencies via conda are provided. First, clone the repository locally:
   
 ```
-git clone https://github.com/babadaiwo/Remote-Sensing-Target-Localization.git
+git clone https://github.com/tiny-smart/Remote-Sensing-Target-Counting-and-Localization.git
 ```
 - Required packages:
   
