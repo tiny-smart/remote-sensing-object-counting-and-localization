@@ -72,12 +72,12 @@ PET
 - Alternatively, you can define the path of the dataset in [datasets/__init__.py](datasets/__init__.py)
 
 - We also provide other remote sensing datasets (crowds, ships and vehicles) in consistent formats:
-- 
+  
 | Dataset | Link | 
 | --- | ---: | 
-| crowds | https://pan.baidu.com/s/1XVzgoyriQ4ibnc_cQM9v8A |
-| vehicles | https://pan.baidu.com/s/1j8I5Jfyq_xnDHZEdFjtdBg |
-| ships | https://pan.baidu.com/s/13khAoYjEFdHz49DV8U3usw |
+| crowds |https://pan.baidu.com/s/1XVzgoyriQ4ibnc_cQM9v8A |
+| vehicles |https://pan.baidu.com/s/1j8I5Jfyq_xnDHZEdFjtdBg |
+| ships |https://pan.baidu.com/s/13khAoYjEFdHz49DV8U3usw |
 
 ## Training
 
