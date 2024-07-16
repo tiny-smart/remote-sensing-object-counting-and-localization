@@ -200,7 +200,6 @@ def evaluate(model, data_loader, device, epoch=0, criterion=None,vis_dir=None):
             r2 = 0
         else:
             r2 = r2_score([gt_cnt], [predict_cnt])
-        
         # if np.isnan(r2):
         #     print(f"gt_cnt: {gt_cnt}, predict_cnt: {predict_cnt}")
         #     print(f"gt_cnt variance: {np.var([gt_cnt])}, predict_cnt variance: {np.var([predict_cnt])}")
