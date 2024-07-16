@@ -5,11 +5,11 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from ut._presets import ImageClassification
-from ut.utils import _log_api_usage_once
-from ut._api import register_model, Weights, WeightsEnum
-from ut._meta import _IMAGENET_CATEGORIES
-from ut._utils import _ovewrite_named_param, handle_legacy_interface
+from .ut._presets import ImageClassification
+from .ut.utils import _log_api_usage_once
+from .ut._api import register_model, Weights, WeightsEnum
+from .ut._meta import _IMAGENET_CATEGORIES
+from .ut._utils import _ovewrite_named_param, handle_legacy_interface
 
 
 

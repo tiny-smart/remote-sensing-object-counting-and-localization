@@ -1,0 +1,3 @@
+swin_v2：
+swinv2_base_patch4_window16_256  效果不好
+swinv2_large_patch4_window12_192_22k 目前
