@@ -4,8 +4,8 @@ python -m torch.distributed.launch \
   --master_port=10111 \
   --use_env main.py \
   --lr=0.0001 \
-  --backbone="vgg16_bn" \
-  --pretrained="../store/pretrained/vgg16_bn-6c64b313.pth" \
+  --backbone="resnet50" \
+  --pretrained="../store/pretrained/resnet50-v1-0676ba61.pth" \
   --ce_loss_coef=1.0 \
   --point_loss_coef=5.0 \
   --eos_coef=0.5 \
