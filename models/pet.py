@@ -804,8 +804,11 @@ def build_pet(args,test=False):
     if args.backbone=='vgg16_bn':
         backbone = build_backbone_vgg(args)
 
-    elif  args.backbone=='swin_v2':
+    elif args.backbone=='swin_v2':
         backbone = build_backbone_swin(args, test)
+        
+    elif args.backbone=='resnet50':
+        backbone = build_backbone_ResNet(args, test)
     model = PET(
         backbone,
         num_classes=num_classes,

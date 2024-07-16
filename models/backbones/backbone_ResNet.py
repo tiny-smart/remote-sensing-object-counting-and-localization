@@ -57,7 +57,6 @@ class FrozenBatchNorm2d(torch.nn.Module):
 
 
 class BackboneBase_ResNet(nn.Module):
-
     def __init__(self, backbone: nn.Module, train_backbone: bool, num_channels: int, return_interm_layers: bool):
         super().__init__()
         for name, parameter in backbone.named_parameters():
@@ -69,6 +68,11 @@ class BackboneBase_ResNet(nn.Module):
             return_layers = {'layer4': "0"}
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
         self.num_channels = num_channels
+        
+        # if return_interm_layers:
+        #     pass
+        # else:
+        #     pass
 
     def forward(self, tensor_list: NestedTensor):
         xs = self.body(tensor_list.tensors)
@@ -112,10 +116,12 @@ class Joiner(nn.Sequential):
         return out, pos
 
 
-def build_backbone_ResNet(args):
+def build_backbone_ResNet(args, test=False):
     position_embedding = build_position_encoding(args)
     train_backbone = args.lr_backbone > 0
-    return_interm_layers = args.masks
+    # return_interm_layers = args.masks
+    return_interm_layers = True
+    args.dilation = False
     backbone = Backbone_ResNet(args.backbone, train_backbone, return_interm_layers, args.dilation)
     model = Joiner(backbone, position_embedding)
     model.num_channels = backbone.num_channels
