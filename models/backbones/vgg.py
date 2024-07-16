@@ -21,7 +21,7 @@ model_urls = {
 
 
 model_paths = {
-    'vgg16_bn': './pretrained/vgg16_bn-6c64b313.pth',
+    'vgg16_bn': '../store/pretrained/vgg16_bn-6c64b313.pth',
 }
 
 
