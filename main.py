@@ -63,8 +63,8 @@ def get_args_parser():
 
     # dataset parameters
 
-    parser.add_argument('--dataset_file', default="SHA")
-    parser.add_argument('--data_path', default="./data/ShanghaiTech/PartA", type=str)
+    parser.add_argument('--dataset_file', default="Car")
+    parser.add_argument('--data_path', default="../Car_train_test_total", type=str)
     parser.add_argument('--pretrained', default="", type=str)
 
     # misc parameters

@@ -8,7 +8,7 @@ from .CARPK import build as build_Car
 data_path = {
     'SHA': './data/ShanghaiTech/part_A/',
     'CARPK': '/home/rscount/lhx/Remote-Sensing-Target-Localization/data/CARPK/',
-    'Car': '/data/Car/'
+    'Car': '/root/autodl-tmp/Car_train_test_total'
 }
 
 def build_dataset(image_set, args):
